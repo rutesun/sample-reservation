@@ -1,10 +1,10 @@
 package config
 
 import (
-	"database/sql"
 	"fmt"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/jmoiron/sqlx"
 	"github.com/kelseyhightower/envconfig"
 )
 
@@ -19,8 +19,8 @@ type config struct {
 		Name         string
 		Charset      string `default:"utf8mb4"`
 		Location     string `default:"UTC"`
-		MaxIdleConns int    `default:1`
-		MaxOpenConns int    `default:10`
+		MaxIdleConns int    `default:"1"`
+		MaxOpenConns int    `default:"10"`
 	}
 }
 
@@ -33,19 +33,18 @@ func Parse() (*config, error) {
 }
 
 type setting struct {
-	DB *sql.DB
+	*sqlx.DB
 }
 
 func Make(c *config) (*setting, error) {
 	endpoint := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=%s",
 		c.Database.User, c.Database.Password,
-		c.Database.Host, c.Database.Port,
-		c.Database.Name, c.Database.Charset, c.Database.Location)
-	db, err := sql.Open("mysql", endpoint)
+		c.Database.Host, c.Database.Port, c.Database.Name,
+		c.Database.Charset, c.Database.Location)
+	db, err := sqlx.Open("mysql", endpoint)
 	if err != nil {
 		panic(err.Error()) // Just for example purpose. You should use proper error handling instead of panic
 	}
-	defer db.Close()
 
 	db.SetMaxIdleConns(c.Database.MaxIdleConns)
 	db.SetMaxOpenConns(c.Database.MaxOpenConns)

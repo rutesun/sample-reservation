@@ -62,4 +62,8 @@ func TestMake(t *testing.T) {
 
 	t.Logf("\nSetting = %+v", set)
 	assert.NotNil(t, set.DB)
+
+	if err = set.DB.Ping(); err != nil {
+		panic(err)
+	}
 }
