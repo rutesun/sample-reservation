@@ -57,6 +57,7 @@ func (db *db) listAll(date time.Time) ([]*dtoReservation, error) {
 		"r.target_date",
 		"r.start_time",
 		"r.end_time",
+		"r.memo",
 	).
 		From("reservation AS r").
 		Join("reservation_item AS ri ON r.item_id = ri.id").
@@ -90,13 +91,7 @@ type execer interface {
 	Exec(string, ...interface{}) (sql.Result, error)
 }
 
-type repeater struct {
-	count, max int
-}
-
-var emptyRepeater = repeater{}
-
-func (db *db) MakeRepeatly(roomID int, userID int, repeatCnt int, startTime time.Time, endTime time.Time) error {
+func (db *db) MakeRepeatly(roomID int, userID int, startTime time.Time, endTime time.Time, repeatCnt int, memo string) error {
 	var (
 		err error
 		tx  *sql.Tx
@@ -105,8 +100,12 @@ func (db *db) MakeRepeatly(roomID int, userID int, repeatCnt int, startTime time
 	if tx, err = db.DB.Begin(); err != nil {
 		return errors.Wrap(err, "Fail to begin transaction")
 	}
+	if repeatCnt == 0 {
+		return exception.InvalidRequest
+	}
 	for i := 0; i < repeatCnt; i++ {
-		if err := db.make(tx, roomID, userID, startTime, endTime, repeater{i, repeatCnt}); err != nil {
+		if err := db.make(tx, roomID, userID, startTime, endTime,
+			fmt.Sprintf("(반복 %d/%d회)\n%s", i+1, repeatCnt, memo)); err != nil {
 			tx.Rollback()
 			return errors.Wrap(err, "예약 반복 생성 중에 실패하였습니다:")
 		}
@@ -120,27 +119,22 @@ func (db *db) MakeRepeatly(roomID int, userID int, repeatCnt int, startTime time
 	return nil
 }
 
-func (db *db) Make(roomID int, userID int, startTime time.Time, endTime time.Time) error {
-	if err := db.make(db.DB, roomID, userID, startTime, endTime, emptyRepeater); err != nil {
+func (db *db) Make(roomID int, userID int, startTime time.Time, endTime time.Time, memo string) error {
+	if err := db.make(db.DB, roomID, userID, startTime, endTime, memo); err != nil {
 		return errors.WithStack(err)
 	} else {
 		return nil
 	}
 }
 
-func (db *db) make(execer execer, roomID, userID int, startTime, endTime time.Time, repeatable repeater) error {
+func (db *db) make(execer execer, roomID, userID int, startTime, endTime time.Time, memo string) error {
 	var err error
 
-	columes := []string{"item_id", "user_id", "target_date", "start_time", "end_time"}
-	values := []interface{}{roomID, userID, customTime(startTime).getDateStr(), customTime(startTime).getHhmmInt(), customTime(endTime).getHhmmInt()}
-
-	if repeatable != emptyRepeater {
-		columes = append(columes, "repeat_cnt", "repeat_max")
-		values = append(values, repeatable.count, repeatable.max)
-	}
+	columns := []string{"item_id", "user_id", "target_date", "start_time", "end_time", "memo"}
+	values := []interface{}{roomID, userID, customTime(startTime).getDateStr(), customTime(startTime).getHhmmInt(), customTime(endTime).getHhmmInt(), memo}
 
 	builder := sq.Insert("reservation").
-		Columns(columes...).
+		Columns(columns...).
 		Values(values...)
 
 	query, args, err := builder.ToSql()
@@ -184,13 +178,14 @@ type dtoRoom struct {
 }
 
 type dtoReservation struct {
-	ID         int64     `db:"id"`
-	RoomID     int64     `db:"room_id"`
-	RoomName   string    `db:"room_name"`
-	UserName   string    `db:"user_name"`
-	TargetDate time.Time `db:"target_date"`
-	StartTime  int       `db:"start_time"`
-	EndTime    int       `db:"end_time"`
+	ID         int64          `db:"id"`
+	RoomID     int64          `db:"room_id"`
+	RoomName   string         `db:"room_name"`
+	UserName   string         `db:"user_name"`
+	TargetDate time.Time      `db:"target_date"`
+	StartTime  int            `db:"start_time"`
+	EndTime    int            `db:"end_time"`
+	Memo       sql.NullString `db:"memo"`
 }
 
 // RFC3339 format
@@ -220,5 +215,6 @@ func convertReservation(r *dtoReservation) *reservation.Detail {
 			Name: r.UserName,
 		},
 		Start: startTime, End: endTime,
+		Memo: r.Memo.String,
 	}
 }

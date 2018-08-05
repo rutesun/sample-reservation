@@ -7,15 +7,19 @@ import (
 )
 
 type Detail struct {
-	Room   Room      `json:"room"`
-	User   User      `json:"user"`
-	Start  time.Time `json:"startTime"`
-	End    time.Time `json:"endTime"`
-	Repeat struct {
-		Cur int
-		Max int
-	} `json:"repeat"`
+	Room  Room      `json:"room"`
+	User  User      `json:"user"`
+	Start time.Time `json:"startTime"`
+	End   time.Time `json:"endTime"`
+	Memo  string    `json:"memo"`
 }
+
+type ExtraInfo struct {
+	Memo   string
+	Repeat int
+}
+
+var emptyExtra = ExtraInfo{}
 
 type Reservations []*Detail
 
@@ -26,17 +30,11 @@ func NewReservedMap() *ReservedMap {
 	return &rMap
 }
 
-type Service interface {
-	List(date time.Time) ReservedMap
-	CheckAvailable(roomID int, startTime time.Time, endTime time.Time) (bool, error)
-	Make(roomID int, userID int, startTime time.Time, endTime time.Time) error
-	Cancel(reservationID uint) (bool, error)
-}
-
 type Repository interface {
 	ListAll(date time.Time) ([]*Detail, error)
 	CheckAvailable(roomID int, startTime time.Time, endTime time.Time) (bool, error)
-	Make(roomID int, userID int, startTime time.Time, endTime time.Time) error
+	Make(roomID int, userID int, startTime time.Time, endTime time.Time, memo string) error
+	MakeRepeatly(roomID int, userID int, startTime time.Time, endTime time.Time, repeatCnt int, memo string) error
 	Cancel(reservationID uint) (bool, error)
 }
 
@@ -73,22 +71,13 @@ func (s *service) CheckAvailable(roomID int, startTime time.Time, endTime time.T
 	return s.Repository.CheckAvailable(roomID, startTime, endTime)
 }
 
-type Request struct {
-	RoomID int
-	UserID int
-
-	startTime, endTime time.Time
-}
-
-func (s *service) Make(roomID int, userID int, startTime time.Time, endTime time.Time) error {
-	if f, err := s.CheckAvailable(roomID, startTime, endTime); err != nil {
-		return err
-	} else if !f {
-		return exception.Unavailable
+func (s *service) Make(roomID int, userID int, startTime time.Time, endTime time.Time, extra ExtraInfo) error {
+	if extra.Repeat > 0 {
+		return s.Repository.MakeRepeatly(roomID, userID, startTime, endTime, extra.Repeat, extra.Memo)
 	}
-
-	return s.Repository.Make(roomID, userID, startTime, endTime)
+	return s.Repository.Make(roomID, userID, startTime, endTime, extra.Memo)
 }
+
 func (s *service) Cancel(reservationID uint) (bool, error) {
 	return s.Repository.Cancel(reservationID)
 }
