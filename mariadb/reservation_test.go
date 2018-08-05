@@ -28,6 +28,11 @@ func init() {
 	mariadb = New(setting.DB)
 }
 
+var (
+	roomID   = int64(1)
+	userName = "Ted"
+)
+
 func TestDb_listAll(t *testing.T) {
 	list, err := mariadb.listAll(time.Now())
 
@@ -55,9 +60,9 @@ func TestDb_parseTime(t *testing.T) {
 func TestDb_convert(t *testing.T) {
 	dto := &dtoReservation{
 		ID:         1,
-		RoomID:     1,
+		RoomID:     roomID,
 		RoomName:   "회의실A",
-		UserName:   "Ted",
+		UserName:   userName,
 		TargetDate: time.Now(),
 		StartTime:  900, EndTime: 1100,
 	}
@@ -80,14 +85,14 @@ func TestDb_Make(t *testing.T) {
 	st, _ := time.Parse(time.RFC3339, "2018-08-04T18:00:00+09:00")
 	et, _ := time.Parse(time.RFC3339, "2018-08-04T19:00:00+09:00")
 
-	id, err := mariadb.Make(1, 1, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt(), "")
+	id, err := mariadb.Make(roomID, userName, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt(), "")
 	if err != nil {
 		assert.EqualError(t, err, exception.Unavailable.Error())
 	}
 
 	t.Log(id)
 
-	check, err := mariadb.Available(1, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt())
+	check, err := mariadb.Available(roomID, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt())
 	assert.NoError(t, err)
 	assert.False(t, check)
 }
@@ -96,7 +101,7 @@ func TestDb_CheckAvailable(t *testing.T) {
 	st, _ := time.Parse(time.RFC3339, "2018-08-04T00:00:00+09:00")
 	et, _ := time.Parse(time.RFC3339, "2018-08-04T23:00:00+09:00")
 
-	_, err := mariadb.Available(1, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt())
+	_, err := mariadb.Available(roomID, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt())
 	assert.NoError(t, err)
 }
 
@@ -105,7 +110,7 @@ func TestDb_MakeRepeatly(t *testing.T) {
 	et, _ := time.Parse(time.RFC3339, "2018-08-05T19:00:00+09:00")
 
 	repeatCnt := 5
-	ids, err := mariadb.MakeRepeatly(1, 1, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt(), repeatCnt, "")
+	ids, err := mariadb.MakeRepeatly(roomID, userName, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt(), repeatCnt, "")
 	if err != nil {
 		assert.EqualError(t, err, exception.Unavailable.Error())
 	}
@@ -113,7 +118,7 @@ func TestDb_MakeRepeatly(t *testing.T) {
 	t.Log(ids)
 
 	for i := 0; i < 5; i++ {
-		check, err := mariadb.Available(1, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt())
+		check, err := mariadb.Available(roomID, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt())
 		assert.NoError(t, err)
 		assert.False(t, check)
 		st = st.AddDate(0, 0, 7)

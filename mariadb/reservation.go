@@ -43,7 +43,7 @@ func (db *db) listAll(date time.Time) ([]*dtoReservation, error) {
 		"r.id",
 		"ri.id AS room_id",
 		"ri.name AS room_name",
-		"ru.name AS user_name",
+		"r.user_name AS user_name",
 		"r.target_date",
 		"r.start_time",
 		"r.end_time",
@@ -51,14 +51,13 @@ func (db *db) listAll(date time.Time) ([]*dtoReservation, error) {
 	).
 		From("reservation AS r").
 		Join("reservation_item AS ri ON r.item_id = ri.id").
-		Join("reservation_user AS ru ON r.user_id = ru.id").
 		Where("r.target_date = ?", date)
 
 	err := db.Select(&reservations, builder)
 	return reservations, err
 }
 
-func (db *db) Available(roomID int, date time.Time, startTime, endTime int) (bool, error) {
+func (db *db) Available(roomID int64, date time.Time, startTime, endTime int) (bool, error) {
 	builder := sq.Select("count(*)").
 		From("reservation").
 		Where("item_id = ?", roomID).
@@ -81,7 +80,7 @@ type execer interface {
 	Exec(string, ...interface{}) (sql.Result, error)
 }
 
-func (db *db) MakeRepeatly(roomID int, userID int, date time.Time, startTime, endTime int, repeatCnt int, memo string) ([]int64, error) {
+func (db *db) MakeRepeatly(roomID int64, userName string, date time.Time, startTime, endTime int, repeatCnt int, memo string) ([]int64, error) {
 	var (
 		err error
 		tx  *sql.Tx
@@ -95,7 +94,7 @@ func (db *db) MakeRepeatly(roomID int, userID int, date time.Time, startTime, en
 		return nil, exception.InvalidRequest
 	}
 	for i := 0; i < repeatCnt; i++ {
-		if res, err := db.make(tx, roomID, userID, date, startTime, endTime,
+		if res, err := db.make(tx, roomID, userName, date, startTime, endTime,
 			fmt.Sprintf("(반복 %d/%d회)\n%s", i+1, repeatCnt, memo)); err != nil {
 			tx.Rollback()
 			return nil, err
@@ -113,19 +112,19 @@ func (db *db) MakeRepeatly(roomID int, userID int, date time.Time, startTime, en
 	return ids, nil
 }
 
-func (db *db) Make(roomID int, userID int, date time.Time, startTime, endTime int, memo string) (int64, error) {
-	if res, err := db.make(db.DB, roomID, userID, date, startTime, endTime, memo); err != nil {
+func (db *db) Make(roomID int64, userName string, date time.Time, startTime, endTime int, memo string) (int64, error) {
+	if res, err := db.make(db.DB, roomID, userName, date, startTime, endTime, memo); err != nil {
 		return 0, errors.WithStack(err)
 	} else {
 		return res.LastInsertId()
 	}
 }
 
-func (db *db) make(execer execer, roomID, userID int, date time.Time, startTime, endTime int, memo string) (sql.Result, error) {
+func (db *db) make(execer execer, roomID int64, userName string, date time.Time, startTime, endTime int, memo string) (sql.Result, error) {
 	var err error
 
-	columns := []string{"item_id", "user_id", "target_date", "start_time", "end_time", "memo"}
-	values := []interface{}{roomID, userID, date, startTime, endTime, memo}
+	columns := []string{"item_id", "user_name", "target_date", "start_time", "end_time", "memo"}
+	values := []interface{}{roomID, userName, date, startTime, endTime, memo}
 
 	builder := sq.Insert("reservation").
 		Columns(columns...).
@@ -149,18 +148,13 @@ func (db *db) make(execer execer, roomID, userID int, date time.Time, startTime,
 	return execer.Exec(query, args...)
 }
 
-func (db *db) Cancel(reservationID uint) (bool, error) {
+func (db *db) Cancel(reservationID int64) (bool, error) {
 	builder := sq.Delete("reservation").Where("id = ?", reservationID)
 	if _, err := db.Exec(builder); err != nil {
 		return false, errors.WithStack(err)
 	}
 
 	return true, nil
-}
-
-type dtoUser struct {
-	ID   int64  `db:"id"`
-	Name string `db:"name"`
 }
 
 type dtoRoom struct {
