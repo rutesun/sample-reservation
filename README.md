@@ -23,6 +23,14 @@ export DATABASE_NAME=reservation
 ```
 
 ## 문제해결 전략
+- 중복 생성은 db의 unique 키 제약 조건을 사용
+- 반복 생성은 transaction 으로 관리
+    - 반복된 횟수 정보는 memo 에 추가하는 방식으로 사용하여 유연하게 대처하도록 함
+
+### DB
+회의실과 예약 정보는 정규화된 데이터인데 redis, memcached 같은 inmemory db 는 document 를 표현하고 
+query에 제약 사항이 있어 mariadb를 사용함
+
 ### Packages
 - config
     - 환경변수를 통해 어플리케이션 구동에 필수적인 값들을 주입받음
@@ -50,6 +58,3 @@ export DATABASE_NAME=reservation
     - endpoint 와 controller 연결
     
     
-### DB
-회의실과 예약 정보는 정규화된 데이터인데 redis, memcached 같은 inmemory db 는 document 를 표현하고 
-query에 제약 사항이 있어 mariadb를 사용함
