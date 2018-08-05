@@ -99,7 +99,7 @@ func (s *Service) Make(roomID int64, userName string, startTimestamp time.Time, 
 		return errors.WithStack(exception.InvalidRequest)
 	}
 	var err error
-	if extra.Repeat > 0 {
+	if extra.Repeat > 1 {
 		_, err = s.reservation.MakeRepeatly(roomID, userName, startTimestamp, endTimestamp, extra.Repeat, extra.Memo)
 	} else {
 		_, err = s.reservation.Make(roomID, userName, startTimestamp, endTimestamp, extra.Memo)
