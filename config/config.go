@@ -32,11 +32,11 @@ func Parse() (*config, error) {
 	return &c, nil
 }
 
-type setting struct {
-	*sqlx.DB
+type Setting struct {
+	DB *sqlx.DB
 }
 
-func Make(c *config) (*setting, error) {
+func Make(c *config) (*Setting, error) {
 	endpoint := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=%s",
 		c.Database.User, c.Database.Password,
 		c.Database.Host, c.Database.Port, c.Database.Name,
@@ -51,5 +51,5 @@ func Make(c *config) (*setting, error) {
 
 	err = db.Ping()
 
-	return &setting{db}, err
+	return &Setting{db}, err
 }
