@@ -1,8 +1,10 @@
 package reservation
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/rutesun/reservation/exception"
 )
 
@@ -32,21 +34,21 @@ func NewReservedMap() *ReservedMap {
 
 type Repository interface {
 	ListAll(date time.Time) ([]*Detail, error)
-	CheckAvailable(roomID int, startTime time.Time, endTime time.Time) (bool, error)
-	Make(roomID int, userID int, startTime time.Time, endTime time.Time, memo string) error
-	MakeRepeatly(roomID int, userID int, startTime time.Time, endTime time.Time, repeatCnt int, memo string) error
+	Available(roomID int, date time.Time, startTime, endTime int) (bool, error)
+	Make(roomID int, userID int, date time.Time, startTime, endTime int, memo string) (int64, error)
+	MakeRepeatly(roomID int, userID int, date time.Time, startTime, endTime int, repeatCnt int, memo string) ([]int64, error)
 	Cancel(reservationID uint) (bool, error)
 }
 
-type service struct {
+type Service struct {
 	Repository
 }
 
-func New(r Repository) *service {
-	return &service{r}
+func New(r Repository) *Service {
+	return &Service{r}
 }
 
-func (s *service) List(date time.Time) (ReservedMap, error) {
+func (s *Service) List(date time.Time) (ReservedMap, error) {
 	list, err := s.Repository.ListAll(date)
 	if err != nil {
 		return nil, err
@@ -63,21 +65,62 @@ func (s *service) List(date time.Time) (ReservedMap, error) {
 	}
 	return reservedMap, nil
 }
-func (s *service) CheckAvailable(roomID int, startTime time.Time, endTime time.Time) (bool, error) {
-	if startTime.Before(endTime) {
+
+func (s *Service) CheckAvailable(roomID int, startTimestamp time.Time, endTimestamp time.Time) (bool, error) {
+	if startTimestamp.Before(endTimestamp) {
 		return false, exception.InvalidRequest
 	}
 
-	return s.Repository.CheckAvailable(roomID, startTime, endTime)
+	var (
+		startTime = CustomTime(startTimestamp).GetHhmmInt()
+		endTime   = CustomTime(endTimestamp).GetHhmmInt()
+	)
+
+	return s.Repository.CheckAvailable(roomID, startTimestamp, startTime, endTime)
 }
 
-func (s *service) Make(roomID int, userID int, startTime time.Time, endTime time.Time, extra ExtraInfo) error {
-	if extra.Repeat > 0 {
-		return s.Repository.MakeRepeatly(roomID, userID, startTime, endTime, extra.Repeat, extra.Memo)
+func (s *Service) Make(roomID int, userID int, startTimestamp time.Time, endTimestamp time.Time, extra ExtraInfo) error {
+	if startTimestamp.Before(endTimestamp) {
+		return exception.InvalidRequest
 	}
-	return s.Repository.Make(roomID, userID, startTime, endTime, extra.Memo)
+
+	var (
+		startDateStr = CustomTime(startTimestamp).GetDateStr()
+		endDateStr   = CustomTime(endTimestamp).GetDateStr()
+		startTime    = CustomTime(startTimestamp).GetHhmmInt()
+		endTime      = CustomTime(endTimestamp).GetHhmmInt()
+	)
+
+	if startDateStr != endDateStr {
+		return exception.InvalidRequest
+	}
+
+	// 정시 or 30분 단위로만 예약 가능
+	if startTime%30 != 0 ||
+		endTime%30 != 0 {
+		return exception.InvalidRequest
+	}
+	var err error
+	if extra.Repeat > 0 {
+		_, err = s.Repository.MakeRepeatly(roomID, userID, startTimestamp, startTime, endTime, extra.Repeat, extra.Memo)
+	} else {
+		_, err = s.Repository.Make(roomID, userID, startTimestamp, startTime, endTime, extra.Memo)
+	}
+	return errors.WithStack(err)
+
 }
 
-func (s *service) Cancel(reservationID uint) (bool, error) {
+func (s *Service) Cancel(reservationID uint) (bool, error) {
 	return s.Repository.Cancel(reservationID)
+}
+
+type CustomTime time.Time
+
+func (ct CustomTime) GetDateStr() string {
+	y, m, d := time.Time(ct).Date()
+	return fmt.Sprintf("%d-%02d-%02d", y, m, d)
+}
+
+func (ct CustomTime) GetHhmmInt() int {
+	return time.Time(ct).Hour()*100 + time.Time(ct).Minute()
 }

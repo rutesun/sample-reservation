@@ -9,6 +9,7 @@ import (
 
 	"github.com/rutesun/reservation/config"
 	"github.com/rutesun/reservation/exception"
+	"github.com/rutesun/reservation/reservation"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -75,32 +76,48 @@ func TestDb_convert(t *testing.T) {
 	t.Logf("%+v", detail)
 }
 
-func TestDb_CheckAvailable(t *testing.T) {
-	st, _ := time.Parse(time.RFC3339, "2018-08-04T00:00:00+09:00")
-	et, _ := time.Parse(time.RFC3339, "2018-08-04T23:00:00+09:00")
-
-	_, err := mariadb.CheckAvailable(1, st, et)
-	assert.NoError(t, err)
-}
-
 func TestDb_Make(t *testing.T) {
 	st, _ := time.Parse(time.RFC3339, "2018-08-04T18:00:00+09:00")
 	et, _ := time.Parse(time.RFC3339, "2018-08-04T19:00:00+09:00")
 
-	err := mariadb.Make(1, 1, st, et, "")
+	id, err := mariadb.Make(1, 1, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt(), "")
 	if err != nil {
 		assert.EqualError(t, err, exception.Unavailable.Error())
 	}
+
+	t.Log(id)
+
+	check, err := mariadb.Available(1, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt())
+	assert.NoError(t, err)
+	assert.False(t, check)
+}
+
+func TestDb_CheckAvailable(t *testing.T) {
+	st, _ := time.Parse(time.RFC3339, "2018-08-04T00:00:00+09:00")
+	et, _ := time.Parse(time.RFC3339, "2018-08-04T23:00:00+09:00")
+
+	_, err := mariadb.Available(1, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt())
+	assert.NoError(t, err)
 }
 
 func TestDb_MakeRepeatly(t *testing.T) {
 	st, _ := time.Parse(time.RFC3339, "2018-08-05T16:00:00+09:00")
 	et, _ := time.Parse(time.RFC3339, "2018-08-05T19:00:00+09:00")
 
-	err := mariadb.MakeRepeatly(1, 1, st, et, 5, "")
+	repeatCnt := 5
+	ids, err := mariadb.MakeRepeatly(1, 1, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt(), repeatCnt, "")
 	if err != nil {
-		t.Error(err)
 		assert.EqualError(t, err, exception.Unavailable.Error())
+	}
+
+	t.Log(ids)
+
+	for i := 0; i < 5; i++ {
+		check, err := mariadb.Available(1, st, reservation.CustomTime(st).GetHhmmInt(), reservation.CustomTime(et).GetHhmmInt())
+		assert.NoError(t, err)
+		assert.False(t, check)
+		st = st.AddDate(0, 0, 7)
+		et = et.AddDate(0, 0, 7)
 	}
 }
 

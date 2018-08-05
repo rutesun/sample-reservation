@@ -19,20 +19,10 @@ type db struct {
 	DB *sqlx.DB
 }
 
-type customTime time.Time
-
-func (ct customTime) getDateStr() string {
-	y, m, d := time.Time(ct).Date()
-	return fmt.Sprintf("%d-%02d-%02d", y, m, d)
-}
-
-func (ct customTime) getHhmmInt() int {
-	return time.Time(ct).Hour()*100 + time.Time(ct).Minute()
-}
-
 func New(d *sqlx.DB) *db {
 	return &db{d}
 }
+
 func (db *db) ListAll(date time.Time) ([]*reservation.Detail, error) {
 	list, err := db.listAll(date)
 	if err != nil {
@@ -62,18 +52,18 @@ func (db *db) listAll(date time.Time) ([]*dtoReservation, error) {
 		From("reservation AS r").
 		Join("reservation_item AS ri ON r.item_id = ri.id").
 		Join("reservation_user AS ru ON r.user_id = ru.id").
-		Where("r.target_date = ?", customTime(date).getDateStr())
+		Where("r.target_date = ?", date)
 
 	err := db.Select(&reservations, builder)
 	return reservations, err
 }
 
-func (db *db) CheckAvailable(roomID int, startTime time.Time, endTime time.Time) (bool, error) {
+func (db *db) Available(roomID int, date time.Time, startTime, endTime int) (bool, error) {
 	builder := sq.Select("count(*)").
 		From("reservation").
 		Where("item_id = ?", roomID).
-		Where("target_date = ?", customTime(startTime).getDateStr()).
-		Where("end_time >= ? AND start_time <= ?", customTime(startTime).getHhmmInt(), customTime(endTime).getHhmmInt())
+		Where("target_date = ?", reservation.CustomTime(date).GetDateStr()).
+		Where("end_time >= ? AND start_time <= ?", startTime, endTime)
 
 	count := 0
 	if err := db.Get(&count, builder); err != nil {
@@ -91,47 +81,51 @@ type execer interface {
 	Exec(string, ...interface{}) (sql.Result, error)
 }
 
-func (db *db) MakeRepeatly(roomID int, userID int, startTime time.Time, endTime time.Time, repeatCnt int, memo string) error {
+func (db *db) MakeRepeatly(roomID int, userID int, date time.Time, startTime, endTime int, repeatCnt int, memo string) ([]int64, error) {
 	var (
 		err error
 		tx  *sql.Tx
 	)
 
+	ids := []int64{}
 	if tx, err = db.DB.Begin(); err != nil {
-		return errors.Wrap(err, "Fail to begin transaction")
+		return nil, errors.Wrap(err, "Fail to begin transaction")
 	}
 	if repeatCnt == 0 {
-		return exception.InvalidRequest
+		return nil, exception.InvalidRequest
 	}
 	for i := 0; i < repeatCnt; i++ {
-		if err := db.make(tx, roomID, userID, startTime, endTime,
+		if res, err := db.make(tx, roomID, userID, date, startTime, endTime,
 			fmt.Sprintf("(반복 %d/%d회)\n%s", i+1, repeatCnt, memo)); err != nil {
 			tx.Rollback()
-			return errors.Wrap(err, "예약 반복 생성 중에 실패하였습니다:")
+			return nil, err
+		} else {
+			id, _ := res.LastInsertId()
+			ids = append(ids, id)
+			date = date.AddDate(0, 0, 7)
 		}
-		startTime = startTime.AddDate(0, 0, 7)
-		endTime = endTime.AddDate(0, 0, 7)
+
 	}
 
 	if err = tx.Commit(); err != nil {
-		return errors.Wrap(err, "Fail to commit transaction")
+		return nil, errors.Wrap(err, "Fail to commit transaction")
 	}
-	return nil
+	return ids, nil
 }
 
-func (db *db) Make(roomID int, userID int, startTime time.Time, endTime time.Time, memo string) error {
-	if err := db.make(db.DB, roomID, userID, startTime, endTime, memo); err != nil {
-		return errors.WithStack(err)
+func (db *db) Make(roomID int, userID int, date time.Time, startTime, endTime int, memo string) (int64, error) {
+	if res, err := db.make(db.DB, roomID, userID, date, startTime, endTime, memo); err != nil {
+		return 0, errors.WithStack(err)
 	} else {
-		return nil
+		return res.LastInsertId()
 	}
 }
 
-func (db *db) make(execer execer, roomID, userID int, startTime, endTime time.Time, memo string) error {
+func (db *db) make(execer execer, roomID, userID int, date time.Time, startTime, endTime int, memo string) (sql.Result, error) {
 	var err error
 
 	columns := []string{"item_id", "user_id", "target_date", "start_time", "end_time", "memo"}
-	values := []interface{}{roomID, userID, customTime(startTime).getDateStr(), customTime(startTime).getHhmmInt(), customTime(endTime).getHhmmInt(), memo}
+	values := []interface{}{roomID, userID, date, startTime, endTime, memo}
 
 	builder := sq.Insert("reservation").
 		Columns(columns...).
@@ -142,20 +136,17 @@ func (db *db) make(execer execer, roomID, userID int, startTime, endTime time.Ti
 	log.Debugf("query = %s\targs = %v", query, args)
 
 	if err != nil {
-		return errors.WithStack(err)
+		return nil, errors.WithStack(err)
 	}
 
-	if able, err := db.CheckAvailable(roomID, startTime, endTime); err != nil {
-		return errors.WithStack(err)
+	if able, err := db.Available(roomID, date, startTime, endTime); err != nil {
+		return nil, errors.WithStack(err)
 	} else {
 		if !able {
-			return exception.Unavailable
+			return nil, exception.Unavailable
 		}
 	}
-	if _, err = execer.Exec(query, args...); err != nil {
-		return errors.WithStack(err)
-	}
-	return nil
+	return execer.Exec(query, args...)
 }
 
 func (db *db) Cancel(reservationID uint) (bool, error) {
