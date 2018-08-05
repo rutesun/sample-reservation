@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="kr">
+<head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css"
+          integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+    <link rel="stylesheet" href="public/css/jquery.skedTape.css">
+
+    <title>예약시스템</title>
+</head>
+<body>
+
+<div class="container">
+    <div class="py-5 text-center">
+        <h2>회의실 예약</h2>
+    </div>
+    <div class="row">
+        <div class="col-md-4 order-md-2 mb-4">
+            <h4 class="d-flex justify-content-between align-items-center mb-3">
+                <span class="text-muted">예약</span>
+            </h4>
+            <form class="card p-2" id="reservation_form">
+                <div class="input-group mb-2 mr-sm-2">
+                    <div class="input-group-prepend">
+                        <div class="input-group-text">회의실명</div>
+                    </div>
+                    <select name="room" id="room" class="form-control">
+
+                    </select>
+                </div>
+                <div class="input-group mb-2 mr-sm-2">
+                    <div class="input-group-prepend">
+                        <div class="input-group-text">예약자명</div>
+                    </div>
+                    <input type="text" id="user_name" class="form-control">
+                </div>
+                <div class="input-group mb-2 mr-sm-2">
+                    <div class="input-group-prepend">
+                        <div class="input-group-text">시작</div>
+                    </div>
+                    <input type="datetime-local" id="start_time" class="form-control">
+                </div>
+                <div class="input-group mb-2 mr-sm-2">
+                    <div class="input-group-prepend">
+                        <div class="input-group-text">종료</div>
+                    </div>
+                    <input type="datetime-local" id="end_time" class="form-control">
+                </div>
+                <div class="input-group mb-2 mr-sm-2">
+                    <div class="input-group-prepend">
+                        <div class="input-group-text">반복</div>
+                    </div>
+                    <input type="number" id="repeat" class="form-control">
+                </div>
+
+                <button type="submit" id="regist" class="btn btn-secondary">등록</button>
+            </form>
+        </div>
+
+        <div class="col-md-8 order-md-1">
+            <h4 class="d-flex justify-content-between align-items-center mb-3">
+                <span class="text-muted">회의실 예약 상황</span>
+            </h4>
+            <div class="row">
+                <label for="date"></label>
+                <input id="date" type="date" class="form-control">
+            </div>
+            <div class="row">
+                <div id="calendar"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Optional JavaScript -->
+<!-- jQuery first, then Popper.js, then Bootstrap JS -->
+<script src="https://code.jquery.com/jquery-3.3.1.slim.min.js"
+        integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo"
+        crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js"
+        integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49"
+        crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js"
+        integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy"
+        crossorigin="anonymous"></script>
+
+<script src="public/js/moment.min.js"></script>
+<script src="public/js/jquery.skedTape.js"></script>
+
+<script type="application/javascript">
+    function today(hours, minutes) {
+        var date = new Date();
+        date.setUTCHours(hours, minutes, 0, 0);
+        return date;
+    }
+
+    var events = [
+    ];
+
+    var locations = {};
+
+    function draw(rooms, events) {
+        $('#calendar').skedTape({
+            caption: '회의실',
+            start: today(0, 0),
+            end: today(24, 0),
+            showEventTime: true,
+            showEventDuration: true,
+            scrollWithYWheel: true,
+            minGapTime: 30,
+            locations: rooms,
+            events: events,
+            formatters: {
+                date: function (date) {
+                    return $.fn.skedTape.format.date(date, 'l', '.');
+                },
+                duration: function (start, end, opts) {
+                    return $.fn.skedTape.format.duration(start, end, {
+                        hrs: '시',
+                        min: '분'
+                    });
+                    ;
+                },
+            }
+        });
+    }
+
+    function getReservationList(date) {
+        let start = moment(date),
+                end = moment(date).add(1, 'days');
+
+        return fetch(`/reservations?startDate=${start.format('YYYY-MM-DD')}&endDate=${end.format('YYYY-MM-DD')}`)
+    }
+
+
+    function listParser(list) {
+        let items = []
+        for(let roomId in list) {
+            for(let reserv of list[roomId]) {
+                items.push({
+                    name: reserv.memo + reserv.user,
+                    location: reserv.room.id,
+                    start: today(moment(reserv.startTime).hour(),moment(reserv.startTime).minute()),
+                    end:  today(moment(reserv.endTime).hour(),moment(reserv.endTime).minute()),
+                })
+
+            }
+        }
+
+        events = items
+    }
+
+    $(document).ready(function () {
+        $('#reservation_form').submit(function(e) {
+            e.preventDefault()
+
+            let start_time = moment($('#start_time').val()).format();
+            let end_time = moment($('#end_time').val()).format();
+            let room_id = $('#room').val();
+            let repeat = $('#repeat').val() == "" ? 0: $('#repeat').val();
+            let user_name = $('#user_name').val();
+
+            var formData = new FormData();
+
+            let params = {start_time, end_time, room_id, repeat, user_name};
+            for (let k in  params) {
+                formData.append(k, params[k])
+            }
+
+
+            fetch('/reservation', {
+                method: 'post',
+                body: formData,
+            }).then(function(response) {
+                return response.json();
+            }).then(function(data) {
+                if (data.error) {
+                    alert(data.error)
+                } else {
+                    alert("등록되었습니다.")
+                }
+            }).catch(function(err) {
+                alert(err);
+            });
+        })
+
+
+        $('#date').change(function (e) {
+            getReservationList($(this).val())
+                    .then(function (res) {
+                        return res.json()
+                    })
+                    .then(res => {
+                        listParser(res.result);
+                        $('#calendar').skedTape('removeAllEvents')
+                        $('#calendar').skedTape('addEvents', events)
+                    })
+        });
+
+        let roomPromise = fetch(`/rooms`).then(res => res.json()),
+                todayPromise = getReservationList(moment()).then(res => res.json());
+
+
+        Promise.all([roomPromise, todayPromise]).then(res => {
+            let rooms = res[0].result,
+                    list = res[1].result;
+
+            for(let r of rooms) {
+                locations[r.id] = r.name
+                $('#room').append(
+                    `<option value="${r.id}">${r.name}</option>`
+                )
+            }
+
+            listParser(list)
+
+            draw(locations, events)
+        });
+    })
+</script>
+</body>
+</html>
