@@ -87,8 +87,19 @@ func TestDb_Make(t *testing.T) {
 	st, _ := time.Parse(time.RFC3339, "2018-08-04T18:00:00+09:00")
 	et, _ := time.Parse(time.RFC3339, "2018-08-04T19:00:00+09:00")
 
-	err := mariadb.Make(1, 1, st, et)
+	err := mariadb.Make(1, 1, st, et, "")
 	if err != nil {
+		assert.EqualError(t, err, exception.Unavailable.Error())
+	}
+}
+
+func TestDb_MakeRepeatly(t *testing.T) {
+	st, _ := time.Parse(time.RFC3339, "2018-08-05T16:00:00+09:00")
+	et, _ := time.Parse(time.RFC3339, "2018-08-05T19:00:00+09:00")
+
+	err := mariadb.MakeRepeatly(1, 1, st, et, 5, "")
+	if err != nil {
+		t.Error(err)
 		assert.EqualError(t, err, exception.Unavailable.Error())
 	}
 }
