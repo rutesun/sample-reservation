@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"reflect"
+
 	"github.com/rutesun/reservation/config"
 	"github.com/rutesun/reservation/exception"
 	"github.com/rutesun/reservation/mariadb"
@@ -31,11 +33,13 @@ func init() {
 var (
 	roomID   = int64(1)
 	userName = "Ted"
+
+	date, _ = time.Parse(time.RFC3339, "2018-08-07T0:00:00+09:00")
 )
 
 func TestReservation_List(t *testing.T) {
 	st, _ := time.Parse(time.RFC3339, "2018-08-04T18:00:00+09:00")
-	_, err := service.ListAll(st)
+	_, err := service.List(st)
 	assert.NoError(t, err)
 }
 
@@ -66,17 +70,77 @@ func TestReservation_Make(t *testing.T) {
 
 	})
 
-	t.Run("정상 동작", func(t *testing.T) {
+	t.Run("Invalid Request: 정시, 30분 단위가 아닐 때", func(t *testing.T) {
+		et, _ := time.Parse(time.RFC3339, "2018-08-08T16:10:00+09:00")
+
+		err := service.Make(roomID, userName, st, et, reservation.ExtraInfo{})
+		assert.EqualError(t, err, exception.InvalidRequest.Error())
+
+	})
+
+	t.Run("정상 예약", func(t *testing.T) {
 		et, _ := time.Parse(time.RFC3339, "2018-08-07T19:00:00+09:00")
 
 		err := service.Make(roomID, userName, st, et, reservation.ExtraInfo{})
 		if err != nil {
 			assert.EqualError(t, err, exception.Unavailable.Error())
 		}
-
 	})
+
+	t.Run("끝나는 시간과 시작 시간이 겹칠 때", func(t *testing.T) {
+		st, _ := time.Parse(time.RFC3339, "2018-08-07T14:00:00+09:00")
+		et, _ := time.Parse(time.RFC3339, "2018-08-07T16:00:00+09:00")
+
+		err := service.Make(roomID, userName, st, et, reservation.ExtraInfo{})
+		if err != nil {
+			assert.EqualError(t, err, exception.Unavailable.Error())
+		}
+	})
+
+	t.Run("반복 예약", func(t *testing.T) {
+		st, _ := time.Parse(time.RFC3339, "2018-08-07T12:00:00+09:00")
+		et, _ := time.Parse(time.RFC3339, "2018-08-07T14:00:00+09:00")
+
+		err := service.Make(roomID, userName, st, et, reservation.ExtraInfo{Repeat: 10})
+		if err != nil {
+			assert.EqualError(t, err, exception.Unavailable.Error())
+		}
+	})
+
 }
 
 func TestReservation_Integration(t *testing.T) {
+	st, _ := time.Parse(time.RFC3339, "2018-08-07T10:00:00+09:00")
+	et, _ := time.Parse(time.RFC3339, "2018-08-07T12:00:00+09:00")
 
+	err := service.Make(roomID, userName, st, et, reservation.ExtraInfo{})
+	if err != nil {
+		assert.EqualError(t, err, exception.Unavailable.Error())
+	}
+
+	st, _ = time.Parse(time.RFC3339, "2018-08-07T11:00:00+09:00")
+	et, _ = time.Parse(time.RFC3339, "2018-08-07T12:00:00+09:00")
+
+	err = service.Make(roomID, userName, st, et, reservation.ExtraInfo{})
+	assert.EqualError(t, err, exception.Unavailable.Error())
+
+	reservedMap, err := service.List(st)
+	assert.NoError(t, err)
+
+	list, ok := reservedMap[roomID]
+	assert.True(t, ok)
+	assert.True(t, len(list) > 0)
+
+	detail := list[0]
+	assert.True(t, detail.ID > 0)
+	assert.True(t, detail.Room.ID > 0)
+
+	for _, detail := range list {
+		_, err = service.Cancel(detail.ID)
+		assert.NoError(t, err)
+	}
+
+	reservedMap, err = service.List(st)
+	keys := reflect.ValueOf(reservedMap).MapKeys()
+	assert.Equal(t, len(keys), 0)
 }

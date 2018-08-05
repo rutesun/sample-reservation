@@ -51,7 +51,7 @@ func (db *db) listAll(date time.Time) ([]*dtoReservation, error) {
 	).
 		From("reservation AS r").
 		Join("reservation_item AS ri ON r.item_id = ri.id").
-		Where("r.target_date = ?", date)
+		Where("r.target_date = ?", reservation.CustomTime(date).GetDateStr())
 
 	err := db.Select(&reservations, builder)
 	return reservations, err
@@ -62,7 +62,7 @@ func (db *db) Available(roomID int64, date time.Time, startTime, endTime int) (b
 		From("reservation").
 		Where("item_id = ?", roomID).
 		Where("target_date = ?", reservation.CustomTime(date).GetDateStr()).
-		Where("end_time >= ? AND start_time <= ?", startTime, endTime)
+		Where("end_time >= ? AND start_time < ?", startTime, endTime)
 
 	count := 0
 	if err := db.Get(&count, builder); err != nil {
@@ -192,6 +192,7 @@ func convertReservation(r *dtoReservation) *reservation.Detail {
 	endTime, _ := concatHhmm(r.TargetDate, r.EndTime)
 
 	return &reservation.Detail{
+		ID: r.ID,
 		Room: reservation.Room{
 			ID:   r.RoomID,
 			Name: r.RoomName,

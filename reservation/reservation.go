@@ -9,6 +9,7 @@ import (
 )
 
 type Detail struct {
+	ID    int64     `json:"id"`
 	Room  Room      `json:"room"`
 	User  User      `json:"user"`
 	Start time.Time `json:"startTime"`
@@ -32,7 +33,7 @@ func NewReservedMap() *ReservedMap {
 	return &rMap
 }
 
-type Repository interface {
+type repository interface {
 	ListAll(date time.Time) ([]*Detail, error)
 	Available(roomID int64, date time.Time, startTime, endTime int) (bool, error)
 	Make(roomID int64, userName string, date time.Time, startTime, endTime int, memo string) (int64, error)
@@ -41,15 +42,15 @@ type Repository interface {
 }
 
 type Service struct {
-	Repository
+	r repository
 }
 
-func New(r Repository) *Service {
+func New(r repository) *Service {
 	return &Service{r}
 }
 
-func (s *Service) List(date time.Time) (ReservedMap, error) {
-	list, err := s.Repository.ListAll(date)
+func (s *Service) List(date time.Time) (map[int64][]*Detail, error) {
+	list, err := s.r.ListAll(date)
 	if err != nil {
 		return nil, err
 	}
@@ -57,10 +58,10 @@ func (s *Service) List(date time.Time) (ReservedMap, error) {
 
 	for _, detail := range list {
 		if l, ok := reservedMap[detail.Room.ID]; !ok {
-			reservedMap[detail.Room.ID] = []*Detail{}
-			l = append(l, detail)
+			l = []*Detail{detail}
+			reservedMap[detail.Room.ID] = l
 		} else {
-			l = append(l, detail)
+			reservedMap[detail.Room.ID] = append(l, detail)
 		}
 	}
 	return reservedMap, nil
@@ -76,7 +77,7 @@ func (s *Service) Available(roomID int64, startTimestamp time.Time, endTimestamp
 		endTime   = CustomTime(endTimestamp).GetHhmmInt()
 	)
 
-	return s.Repository.Available(roomID, startTimestamp, startTime, endTime)
+	return s.r.Available(roomID, startTimestamp, startTime, endTime)
 }
 
 func (s *Service) Make(roomID int64, userName string, startTimestamp time.Time, endTimestamp time.Time, extra ExtraInfo) error {
@@ -102,16 +103,16 @@ func (s *Service) Make(roomID int64, userName string, startTimestamp time.Time, 
 	}
 	var err error
 	if extra.Repeat > 0 {
-		_, err = s.Repository.MakeRepeatly(roomID, userName, startTimestamp, startTime, endTime, extra.Repeat, extra.Memo)
+		_, err = s.r.MakeRepeatly(roomID, userName, startTimestamp, startTime, endTime, extra.Repeat, extra.Memo)
 	} else {
-		_, err = s.Repository.Make(roomID, userName, startTimestamp, startTime, endTime, extra.Memo)
+		_, err = s.r.Make(roomID, userName, startTimestamp, startTime, endTime, extra.Memo)
 	}
 	return errors.WithStack(err)
 
 }
 
 func (s *Service) Cancel(reservationID int64) (bool, error) {
-	return s.Repository.Cancel(reservationID)
+	return s.r.Cancel(reservationID)
 }
 
 type CustomTime time.Time
