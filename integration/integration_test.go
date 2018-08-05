@@ -37,9 +37,19 @@ var (
 	date, _ = time.Parse(time.RFC3339, "2018-08-07T0:00:00+09:00")
 )
 
+func TestReservation_RoomList(t *testing.T) {
+	rooms, err := service.RoomList()
+	assert.NoError(t, err)
+
+	for _, r := range rooms {
+		t.Logf("room: %+v", r)
+	}
+}
+
 func TestReservation_List(t *testing.T) {
 	st, _ := time.Parse(time.RFC3339, "2018-08-04T18:00:00+09:00")
-	_, err := service.List(st)
+	et, _ := time.Parse(time.RFC3339, "2018-08-30T18:00:00+09:00")
+	_, err := service.List(st, et)
 	assert.NoError(t, err)
 }
 
@@ -56,14 +66,6 @@ func TestReservation_Make(t *testing.T) {
 
 	t.Run("Invalid Request: 끝나는 시간이 시작 시간 보다 앞설 때 ", func(t *testing.T) {
 		et, _ := time.Parse(time.RFC3339, "2018-08-07T00:00:00+09:00")
-
-		err := service.Make(roomID, userName, st, et, reservation.ExtraInfo{})
-		assert.EqualError(t, err, exception.InvalidRequest.Error())
-
-	})
-
-	t.Run("Invalid Request: 시작 날짜와 끝나는 날짜가 다를 때", func(t *testing.T) {
-		et, _ := time.Parse(time.RFC3339, "2018-08-08T19:00:00+09:00")
 
 		err := service.Make(roomID, userName, st, et, reservation.ExtraInfo{})
 		assert.EqualError(t, err, exception.InvalidRequest.Error())
@@ -124,7 +126,7 @@ func TestReservation_Integration(t *testing.T) {
 	err = service.Make(roomID, userName, st, et, reservation.ExtraInfo{})
 	assert.EqualError(t, err, exception.Unavailable.Error())
 
-	reservedMap, err := service.List(st)
+	reservedMap, err := service.List(st, st.AddDate(0, 0, 1))
 	assert.NoError(t, err)
 
 	list, ok := reservedMap[roomID]
@@ -140,7 +142,7 @@ func TestReservation_Integration(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
-	reservedMap, err = service.List(st)
+	reservedMap, err = service.List(st, st.AddDate(0, 0, 1))
 	keys := reflect.ValueOf(reservedMap).MapKeys()
 	assert.Equal(t, len(keys), 0)
 }

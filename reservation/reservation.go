@@ -1,17 +1,19 @@
 package reservation
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/pkg/errors"
 	"github.com/rutesun/reservation/exception"
+	"github.com/rutesun/reservation/log"
 )
+
+const DateFormat = "2016-01-02"
 
 type Detail struct {
 	ID    int64     `json:"id"`
 	Room  Room      `json:"room"`
-	User  User      `json:"user"`
+	User  string    `json:"user"`
 	Start time.Time `json:"startTime"`
 	End   time.Time `json:"endTime"`
 	Memo  string    `json:"memo"`
@@ -33,27 +35,38 @@ func NewReservedMap() *ReservedMap {
 	return &rMap
 }
 
-type repository interface {
-	ListAll(date time.Time) ([]*Detail, error)
-	Available(roomID int64, date time.Time, startTime, endTime int) (bool, error)
-	Make(roomID int64, userName string, date time.Time, startTime, endTime int, memo string) (int64, error)
-	MakeRepeatly(roomID int64, userName string, date time.Time, startTime, endTime int, repeatCnt int, memo string) ([]int64, error)
+type reservationRepository interface {
+	RoomList() ([]*Room, error)
+	List(startDate, endDate time.Time) ([]*Detail, error)
+	Available(roomID int64, startTime, endTime time.Time) (bool, error)
+	Make(roomID int64, userName string, startTime, endTime time.Time, memo string) (int64, error)
+	MakeRepeatly(roomID int64, userName string, startTime, endTime time.Time, repeatCnt int, memo string) ([]int64, error)
 	Cancel(reservationID int64) (bool, error)
 }
 
 type Service struct {
-	r repository
+	reservation reservationRepository
 }
 
-func New(r repository) *Service {
-	return &Service{r}
+func New(reservation reservationRepository) *Service {
+	return &Service{reservation}
 }
 
-func (s *Service) List(date time.Time) (map[int64][]*Detail, error) {
-	list, err := s.r.ListAll(date)
+func (s *Service) RoomList() ([]*Room, error) {
+	return s.reservation.RoomList()
+}
+
+func (s *Service) List(startDate, endDate time.Time) (map[int64][]*Detail, error) {
+	if endDate.Before(startDate) {
+		return nil, errors.WithStack(exception.InvalidRequest)
+	}
+
+	list, err := s.reservation.List(startDate, endDate)
 	if err != nil {
 		return nil, err
 	}
+
+	log.Debugf("From: %v - To: %v, 예약 Count: %d", startDate, endDate, len(list))
 	reservedMap := make(map[int64][]*Detail)
 
 	for _, detail := range list {
@@ -72,12 +85,7 @@ func (s *Service) Available(roomID int64, startTimestamp time.Time, endTimestamp
 		return false, errors.WithStack(exception.InvalidRequest)
 	}
 
-	var (
-		startTime = CustomTime(startTimestamp).GetHhmmInt()
-		endTime   = CustomTime(endTimestamp).GetHhmmInt()
-	)
-
-	return s.r.Available(roomID, startTimestamp, startTime, endTime)
+	return s.reservation.Available(roomID, startTimestamp, endTimestamp)
 }
 
 func (s *Service) Make(roomID int64, userName string, startTimestamp time.Time, endTimestamp time.Time, extra ExtraInfo) error {
@@ -85,43 +93,21 @@ func (s *Service) Make(roomID int64, userName string, startTimestamp time.Time, 
 		return errors.WithStack(exception.InvalidRequest)
 	}
 
-	var (
-		startDateStr = CustomTime(startTimestamp).GetDateStr()
-		endDateStr   = CustomTime(endTimestamp).GetDateStr()
-		startTime    = CustomTime(startTimestamp).GetHhmmInt()
-		endTime      = CustomTime(endTimestamp).GetHhmmInt()
-	)
-
-	if startDateStr != endDateStr {
-		return errors.WithStack(exception.InvalidRequest)
-	}
-
 	// 정시 or 30분 단위로만 예약 가능
-	if startTime%100%30 != 0 ||
-		endTime%100%30 != 0 {
+	if startTimestamp.Minute()%30 != 0 ||
+		endTimestamp.Minute()%30 != 0 {
 		return errors.WithStack(exception.InvalidRequest)
 	}
 	var err error
 	if extra.Repeat > 0 {
-		_, err = s.r.MakeRepeatly(roomID, userName, startTimestamp, startTime, endTime, extra.Repeat, extra.Memo)
+		_, err = s.reservation.MakeRepeatly(roomID, userName, startTimestamp, endTimestamp, extra.Repeat, extra.Memo)
 	} else {
-		_, err = s.r.Make(roomID, userName, startTimestamp, startTime, endTime, extra.Memo)
+		_, err = s.reservation.Make(roomID, userName, startTimestamp, endTimestamp, extra.Memo)
 	}
 	return errors.WithStack(err)
 
 }
 
 func (s *Service) Cancel(reservationID int64) (bool, error) {
-	return s.r.Cancel(reservationID)
-}
-
-type CustomTime time.Time
-
-func (ct CustomTime) GetDateStr() string {
-	y, m, d := time.Time(ct).Date()
-	return fmt.Sprintf("%d-%02d-%02d", y, m, d)
-}
-
-func (ct CustomTime) GetHhmmInt() int {
-	return time.Time(ct).Hour()*100 + time.Time(ct).Minute()
+	return s.reservation.Cancel(reservationID)
 }
