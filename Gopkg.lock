@@ -184,6 +184,7 @@
   analyzer-version = 1
   input-imports = [
     "github.com/gin-gonic/gin",
+    "github.com/gin-gonic/gin/binding",
     "github.com/go-sql-driver/mysql",
     "github.com/jmoiron/sqlx",
     "github.com/kelseyhightower/envconfig",
